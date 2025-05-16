@@ -1,3 +1,4 @@
+use bpaf::{Parser, construct, long, positional};
 use datafusion::arrow::array::*;
 use datafusion::arrow::datatypes::*;
 use datafusion::arrow::record_batch::RecordBatch;
@@ -11,10 +12,27 @@ use parser::TableParser;
 mod schema;
 use schema::TypeInferer;
 
+#[derive(Clone, Debug)]
+struct Opts {
+    disable_type_infer: bool,
+    query_sql: String,
+}
+
 #[tokio::main]
 async fn main() -> datafusion::error::Result<()> {
-    let args = std::env::args().collect::<Vec<_>>();
-    let query_sql = args[1].clone();
+    let disable_type_infer = long("disable-type-infer")
+        .switch()
+        .help("Disable type inference")
+        .fallback(false);
+    let query_sql = positional::<String>("sql").fallback("SELECT * FROM stdin".to_string());
+    let args_parser = construct!(Opts {
+        disable_type_infer,
+        query_sql
+    });
+    let opts = args_parser
+        .to_options()
+        .descr("Query anything with SQL directly in your terminal");
+    let opts = opts.run();
 
     let lines: Vec<String> = std::io::stdin()
         .lock()
@@ -28,8 +46,15 @@ async fn main() -> datafusion::error::Result<()> {
         .map(|line| parser.parse_row(line))
         .collect::<Vec<_>>();
 
-    let inferer = TypeInferer::new();
-    let fields = inferer.infer_fields(&headers, &rows);
+    let fields = if !opts.disable_type_infer {
+        let inferer = TypeInferer::new();
+        inferer.infer_fields(&headers, &rows)
+    } else {
+        headers
+            .iter()
+            .map(|header| Field::new(header.to_string(), DataType::Utf8, false))
+            .collect::<Vec<_>>()
+    };
     let schema = Arc::new(Schema::new(fields));
     let mut field_arrays: Vec<Arc<dyn Array + 'static>> = Vec::with_capacity(headers.len());
     for (i, field) in schema.fields().iter().enumerate() {
@@ -72,7 +97,7 @@ async fn main() -> datafusion::error::Result<()> {
     let mem_table = MemTable::try_new(schema, vec![vec![batch]])?;
     ctx.register_table("stdin", Arc::new(mem_table))?;
 
-    let df = ctx.sql(&query_sql).await?;
+    let df = ctx.sql(&opts.query_sql).await?;
     df.show().await?;
 
     Ok(())
