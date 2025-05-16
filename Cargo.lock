@@ -2056,6 +2056,7 @@ dependencies = [
  "datafusion",
  "sqlparser 0.56.0",
  "tokio",
+ "unicode-segmentation",
 ]
 
 [[package]]

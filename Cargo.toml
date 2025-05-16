@@ -7,3 +7,4 @@ edition = "2024"
 datafusion = { version = "47.0.0", default-features = false }
 sqlparser = "0.56.0"
 tokio = { version = "1.45.0", features = ["rt-multi-thread"] }
+unicode-segmentation = "1.12.0"

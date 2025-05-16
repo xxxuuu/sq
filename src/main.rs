@@ -6,6 +6,9 @@ use datafusion::prelude::*;
 use std::io::BufRead;
 use std::sync::Arc;
 
+mod parser;
+use parser::TableParser;
+
 #[tokio::main]
 async fn main() -> datafusion::error::Result<()> {
     let args = std::env::args().collect::<Vec<_>>();
@@ -16,10 +19,11 @@ async fn main() -> datafusion::error::Result<()> {
         .lines()
         .map(|line| line.unwrap())
         .collect::<Vec<_>>();
-    let headers: Vec<&str> = lines[0].split_whitespace().collect();
+    let parser = TableParser::new();
+    let headers = parser.parse_header(&lines[0]);
     let rows = lines[1..]
         .iter()
-        .map(|line| line.split_whitespace().collect::<Vec<&str>>())
+        .map(|line| parser.parse_row(line))
         .collect::<Vec<_>>();
 
     let schema = Arc::new(Schema::new(
