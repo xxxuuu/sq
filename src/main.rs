@@ -8,6 +8,8 @@ use std::sync::Arc;
 
 mod parser;
 use parser::TableParser;
+mod schema;
+use schema::TypeInferer;
 
 #[tokio::main]
 async fn main() -> datafusion::error::Result<()> {
@@ -26,18 +28,44 @@ async fn main() -> datafusion::error::Result<()> {
         .map(|line| parser.parse_row(line))
         .collect::<Vec<_>>();
 
-    let schema = Arc::new(Schema::new(
-        headers
-            .iter()
-            .map(|header| Field::new(header.to_string(), DataType::Utf8, false))
-            .collect::<Vec<_>>(),
-    ));
+    let inferer = TypeInferer::new();
+    let fields = inferer.infer_fields(&headers, &rows);
+    let schema = Arc::new(Schema::new(fields));
     let mut field_arrays: Vec<Arc<dyn Array + 'static>> = Vec::with_capacity(headers.len());
-    for i in 0..headers.len() {
-        field_arrays.push(Arc::new(StringArray::from(
-            rows.iter().map(|r| r[i].to_string()).collect::<Vec<_>>(),
-        )));
+    for (i, field) in schema.fields().iter().enumerate() {
+        match field.data_type() {
+            DataType::Int64 => {
+                field_arrays.push(Arc::new(Int64Array::from(
+                    rows.iter()
+                        .map(|r| r[i].parse::<i64>().unwrap_or(0))
+                        .collect::<Vec<_>>(),
+                )));
+            }
+            DataType::Float64 => {
+                field_arrays.push(Arc::new(Float64Array::from(
+                    rows.iter()
+                        .map(|r| r[i].parse::<f64>().unwrap_or(0.0))
+                        .collect::<Vec<_>>(),
+                )));
+            }
+            DataType::Utf8 => {
+                field_arrays.push(Arc::new(StringArray::from(
+                    rows.iter().map(|r| r[i].to_string()).collect::<Vec<_>>(),
+                )));
+            }
+            DataType::Boolean => {
+                field_arrays.push(Arc::new(BooleanArray::from(
+                    rows.iter()
+                        .map(|r| r[i].parse::<bool>().unwrap_or(false))
+                        .collect::<Vec<_>>(),
+                )));
+            }
+            _ => {
+                panic!("Unsupported data type: {}", field.data_type());
+            }
+        }
     }
+
     let batch = RecordBatch::try_new(schema.clone(), field_arrays)?;
 
     let ctx = SessionContext::new();
