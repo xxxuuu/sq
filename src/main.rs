@@ -22,8 +22,7 @@ struct Opts {
 async fn main() -> datafusion::error::Result<()> {
     let disable_type_infer = long("disable-type-infer")
         .switch()
-        .help("Disable type inference")
-        .fallback(false);
+        .help("Disable type inference");
     let query_sql = positional::<String>("sql").fallback("SELECT * FROM stdin".to_string());
     let args_parser = construct!(Opts {
         disable_type_infer,
